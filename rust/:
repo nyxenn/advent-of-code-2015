@@ -13,7 +13,7 @@ pub fn solve() -> SolutionPair {
     (Solution::from(sol1), Solution::from(sol2))
 }
 
-#[derive(Debug, Hash, Clone)]
+#[derive(Debug, Hash)]
 enum Operation {
     AND,
     OR,
@@ -23,7 +23,7 @@ enum Operation {
     SET,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 struct Wire {
     name: String,
     value: Option<u16>,
@@ -48,38 +48,43 @@ impl PartialEq for Wire {
 
 impl Eq for Wire {}
 
-#[derive(Debug, Hash, Clone)]
+#[derive(Debug, Hash)]
 struct Instruction {
     operation: Operation,
     operands: Vec<String>,
 }
 
 fn part_one() -> u16 {
-    let mut circuit = build_circuit();
-    get_wire_value("a", &mut circuit)
+    let circuit = build_circuit();
+    let mut wire = Wire::new("a");
+    let value = get_wire_value(&mut wire, &circuit);
+
+    println!("Final value: {}", value);
+
+    1
 }
 
 fn part_two() -> u16 {
-    let mut circuit = build_circuit();
-    let mut b = circuit.get_mut("b").expect("no b");
-    b.value = Some(part_one());
-    get_wire_value("a", &mut circuit)
+    1
 }
 
-fn get_wire_value(wire_name: &str, circuit: &mut HashMap<String, Wire>) -> u16 {
+fn get_wire_value(wire_name: &str, circuit: &HashMap<String, Wire>) -> u16 {
     let wire = circuit
-        .get(wire_name)
+        .get_mut(wire_name)
         .expect("Could not find wire in circuit");
-
+    println!("Getting wire value for {:?}", wire);
     if let Some(x) = wire.value {
+        println!("Wire has value: {:?}", wire);
         return x;
     }
 
-    let instructions = wire.instructions.clone();
-
-    let mut value: u16 = 0;
+    let instructions = circuit.get(wire).expect("Wire not found in circuit");
     for instruction in instructions.iter().rev() {
-        value = match instruction.operation {
+        println!(
+            "Running instruction: {:?} for wire: {}",
+            instruction, wire.name
+        );
+        wire.value = match instruction.operation {
             Operation::AND => {
                 let a = instruction
                     .operands
@@ -91,7 +96,7 @@ fn get_wire_value(wire_name: &str, circuit: &mut HashMap<String, Wire>) -> u16 {
                     .get(1)
                     .expect("AND: No operand at index 1");
 
-                parse_or_get_wire_value(a, circuit) & parse_or_get_wire_value(b, circuit)
+                Some(parse_or_get_wire_value(a, circuit) & parse_or_get_wire_value(b, circuit))
             }
             Operation::OR => {
                 let a = instruction
@@ -104,7 +109,7 @@ fn get_wire_value(wire_name: &str, circuit: &mut HashMap<String, Wire>) -> u16 {
                     .get(1)
                     .expect("OR: No operand at index 1");
 
-                parse_or_get_wire_value(a, circuit) | parse_or_get_wire_value(b, circuit)
+                Some(parse_or_get_wire_value(a, circuit) | parse_or_get_wire_value(b, circuit))
             }
             Operation::NOT => {
                 let a = instruction
@@ -112,7 +117,7 @@ fn get_wire_value(wire_name: &str, circuit: &mut HashMap<String, Wire>) -> u16 {
                     .get(0)
                     .expect("NOT: No operand at index 0");
 
-                !parse_or_get_wire_value(a, circuit)
+                Some(!parse_or_get_wire_value(a, circuit))
             }
             Operation::RSHIFT => {
                 let a = instruction
@@ -127,7 +132,7 @@ fn get_wire_value(wire_name: &str, circuit: &mut HashMap<String, Wire>) -> u16 {
                     .parse::<u16>()
                     .expect("Could not parse amount of bits to RSHIFT");
 
-                parse_or_get_wire_value(a, circuit) >> amt
+                Some(parse_or_get_wire_value(a, circuit) >> amt)
             }
             Operation::LSHIFT => {
                 let a = instruction
@@ -142,7 +147,7 @@ fn get_wire_value(wire_name: &str, circuit: &mut HashMap<String, Wire>) -> u16 {
                     .parse::<u16>()
                     .expect("Could not parse amount of bits to RSHIFT");
 
-                parse_or_get_wire_value(a, circuit) << amt
+                Some(parse_or_get_wire_value(a, circuit) << amt)
             }
             Operation::SET => {
                 let a = instruction
@@ -150,23 +155,26 @@ fn get_wire_value(wire_name: &str, circuit: &mut HashMap<String, Wire>) -> u16 {
                     .get(0)
                     .expect("NOT: No operand at index 0");
 
-                parse_or_get_wire_value(a, circuit)
+                Some(parse_or_get_wire_value(a, circuit))
             }
         };
     }
 
-    let mut wire = circuit
-        .get_mut(wire_name)
-        .expect("Could not find wire in circuit");
-
-    wire.value = Some(value);
-    value
+    println!("Instructions finished, wire: {:?}", wire);
+    println!("");
+    wire.value.expect("Wire value was not set")
 }
 
-fn parse_or_get_wire_value(s: &str, circuit: &mut HashMap<String, Wire>) -> u16 {
+fn parse_or_get_wire_value(s: &str, circuit: &HashMap<String, Wire>) -> u16 {
     match s.parse::<u16>() {
         Ok(x) => x,
-        Err(_) => get_wire_value(s, circuit),
+        Err(_) => get_wire_value(
+            &mut circuit
+                .keys()
+                .find(|w| w.name == s)
+                .expect("Wire not found in circui"),
+            circuit,
+        ),
     }
 }
 
@@ -204,17 +212,20 @@ fn build_circuit() -> HashMap<String, Wire> {
             .map(|m| m.as_str().to_string())
             .collect();
 
+        let wire = Wire {
+            name: dest_str.to_string(),
+            value: None,
+        };
+
         let instruction = Instruction {
             operation,
             operands,
         };
 
-        if let Some(wire) = map.get_mut(dest_str) {
-            wire.instructions.push(instruction);
+        if let Some(instructions) = map.get_mut(&wire) {
+            instructions.push(instruction);
         } else {
-            let mut wire = Wire::new(dest_str);
-            wire.instructions.push(instruction);
-            map.insert(dest_str.to_string(), wire);
+            map.insert(wire, vec![instruction]);
         }
     }
 
